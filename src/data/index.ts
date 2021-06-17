@@ -91,35 +91,43 @@ export const exportCanvas = (
       });
     })();
   } else if (type === "clipboard") {
-    const isDarwin = /Mac|iPod|iPhone|iPad/.test(window.navigator.platform);
-
-    if (isDarwin) {
-      return navigator.clipboard.write([
+    let doesNotSupportDelayedGeneration = false;
+    // https://bugs.webkit.org/show_bug.cgi?id=222262
+    try {
+      navigator.clipboard.write([
         new window.ClipboardItem({
           "image/png": new Promise((resolve, reject) => {
-            canvasToBlob(tempCanvas)
-              .then((blob) => {
-                resolve(blob);
-              })
-              .catch((error) => {
-                reject(error);
-              });
+            // deferred so that we don't process the canvas twice unnecessarily
+            setTimeout(() => {
+              if (doesNotSupportDelayedGeneration) {
+                return;
+              }
+              canvasToBlob(tempCanvas)
+                .then((blob) => {
+                  resolve(blob);
+                })
+                .catch((error) => {
+                  reject(error);
+                });
+            });
           }),
         }),
       ]);
-    }
+    } catch (error) {
+      doesNotSupportDelayedGeneration = true;
 
-    return (async function () {
-      const blob = await canvasToBlob(tempCanvas);
-      try {
-        copyBlobToClipboardAsPng(blob);
-      } catch (error) {
-        if (error.name === "CANVAS_POSSIBLY_TOO_BIG") {
-          throw error;
+      return (async function () {
+        const blob = await canvasToBlob(tempCanvas);
+        try {
+          copyBlobToClipboardAsPng(blob);
+        } catch (error) {
+          if (error.name === "CANVAS_POSSIBLY_TOO_BIG") {
+            throw error;
+          }
+          throw new Error(t("alerts.couldNotCopyToClipboard"));
         }
-        throw new Error(t("alerts.couldNotCopyToClipboard"));
-      }
-    })();
+      })();
+    }
   }
 
   return Promise.reject(new Error(`Unhandled export type: ${type}`));
